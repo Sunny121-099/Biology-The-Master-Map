@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DRDO CEPTAM 11 - Master Biology Dashboard</title>
+    <!-- Loading Three.js from a reliable CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0f172a; color: white; font-family: 'Segoe UI', sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; display: block; background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); }
+        
+        /* Glass Panel UI */
+        #ui-panel {
+            position: absolute; top: 0; right: 0; width: 380px; height: 100vh;
+            background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(10px);
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 20px; overflow-y: auto; display: flex; flex-direction: column;
+            box-shadow: -10px 0 30px rgba(0,0,0,0.5);
+        }
+
+        /* Loading Screen */
+        #loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #0f172a; z-index: 9999; display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+        }
+        .spinner {
+            width: 50px; height: 50px; border: 4px solid rgba(59, 130, 246, 0.3);
+            border-top: 4px solid #3b82f6; border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* Navigation Tabs */
+        .nav-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 20px; }
+        .btn-tab {
+            padding: 10px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase;
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+            color: #94a3b8; border-radius: 6px; transition: all 0.2s;
+        }
+        .btn-tab:hover { background: rgba(255,255,255,0.1); color: white; }
+        .btn-tab.active {
+            background: #2563eb; color: white; border-color: #3b82f6; box-shadow: 0 0 15px rgba(37, 99, 235, 0.4);
+        }
+
+        /* Interactive Parts */
+        .part-list { display: flex; flex-direction: column; gap: 8px; }
+        .btn-part {
+            text-align: left; padding: 12px; background: rgba(30, 41, 59, 0.6);
+            border-left: 3px solid transparent; border-radius: 4px;
+            transition: all 0.2s; cursor: pointer;
+        }
+        .btn-part:hover { background: rgba(51, 65, 85, 0.8); }
+        .btn-part.selected { background: rgba(51, 65, 85, 1); border-left-color: #3b82f6; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+    <!-- Loading Screen -->
+    <div id="loading-overlay">
+        <div class="spinner mb-4"></div>
+        <h2 class="text-xl font-bold text-blue-400">Loading Full Syllabus...</h2>
+        <p class="text-slate-400 text-sm mt-2">Building Cells, Heart, Digestion & Lungs</p>
+    </div>
+
+    <!-- 3D Canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- UI Panel -->
+    <div id="ui-panel" class="hidden">
+        <div class="mb-4">
+            <h1 class="text-xl font-bold text-white mb-1">🧬 Biology Master Map</h1>
+            <p class="text-xs text-blue-400">Visualizing the connections (Videos 1-16)</p>
+        </div>
+
+        <!-- System Switcher -->
+        <div class="nav-grid">
+            <button onclick="switchSystem('cell')" id="tab-cell" class="btn-tab active">1. The Cell<br><span class="text-[9px] opacity-70">The Factory</span></button>
+            <button onclick="switchSystem('blood')" id="tab-blood" class="btn-tab">2. Blood/Heart<br><span class="text-[9px] opacity-70">The Highway</span></button>
+            <button onclick="switchSystem('digestive')" id="tab-digestive" class="btn-tab">3. Digestion<br><span class="text-[9px] opacity-70">Fuel Intake</span></button>
+            <button onclick="switchSystem('respiratory')" id="tab-respiratory" class="btn-tab">4. Respiration<br><span class="text-[9px] opacity-70">Oxygen Intake</span></button>
+        </div>
+
+        <!-- Context Header -->
+        <div class="mb-4 p-3 bg-slate-800/50 rounded border border-slate-700">
+            <h2 id="system-title" class="text-lg font-bold text-white mb-1">Cell Biology</h2>
+            <p id="system-desc" class="text-xs text-slate-300 leading-relaxed">
+                The fundamental unit of life. This is where energy is made and DNA is stored.
+            </p>
+        </div>
+
+        <!-- Parts List -->
+        <div id="controls-area" class="part-list"></div>
+
+        <!-- AI Connection -->
+        <div class="mt-auto pt-4">
+            <div id="ai-response-box" class="bg-slate-800 p-3 rounded text-xs text-slate-300 border border-slate-600 hidden">
+                <strong class="text-purple-400 block mb-1">💡 Connection:</strong>
+                <span id="ai-text">Loading explanation...</span>
+            </div>
+            <button onclick="explainConnection()" id="btn-explain" class="w-full mt-3 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded text-xs transition-colors">
+                How does this connect to the rest?
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA: The "Master Map" of Content ---
+        const systems = {
+            cell: {
+                title: "Unit 1: Cell Biology (Videos 1-5)",
+                desc: "The destination for all nutrients and oxygen. The cell uses what the other systems provide to keep you alive.",
+                parts: [
+                    { id: "nucleus", label: "Nucleus", info: "The Manager. Stores DNA instructions for building proteins." },
+                    { id: "mitochondria", label: "Mitochondria", info: "The Engine. Uses Oxygen (from Lungs) + Glucose (from Digestion) to make Energy." },
+                    { id: "ribosome", label: "Ribosomes", info: "The Workers. They build proteins based on DNA orders." },
+                    { id: "membrane", label: "Cell Membrane", info: "The Gatekeeper. Lets good stuff in, keeps bad stuff out." }
+                ],
+                connection: "The Cell is the final customer! The Digestive system sends it Glucose, the Respiratory system sends it Oxygen, and the Blood delivers it all here."
+            },
+            blood: {
+                title: "Unit 2: Circulatory System (Videos 6-9)",
+                desc: "The transport highway. Blood carries Oxygen, CO2, Nutrients, and Waste to/from every cell.",
+                parts: [
+                    { id: "heart", label: "The Heart", info: "The Pump. 4 Chambers. Right side pumps to lungs (for O2), Left side pumps to body." },
+                    { id: "rbc", label: "Red Blood Cells", info: "The Trucks. Contain Hemoglobin to carry Oxygen." },
+                    { id: "wbc", label: "White Blood Cells", info: "The Police. They fight infections and diseases." },
+                    { id: "platelets", label: "Platelets", info: "The Mechanics. They clot blood to stop bleeding." }
+                ],
+                connection: "Blood connects everything. It picks up O2 from Lungs and Food from Intestines, then drives them to the Cells."
+            },
+            digestive: {
+                title: "Unit 3: Digestive System (Videos 10-14)",
+                desc: "Breaks down complex food into simple molecules (Glucose) that cells can actually use.",
+                parts: [
+                    { id: "stomach", label: "Stomach", info: "The Mixer. Uses Acid (HCl) and Enzymes to mash food into liquid." },
+                    { id: "intestine", label: "Small Intestine", info: "The Absorber. Where food actually enters the blood (Villi)." },
+                    { id: "liver", label: "Liver", info: "The Filter & Chemical Factory. Makes bile for fat digestion." }
+                ],
+                connection: "This system provides the FUEL (Glucose). Without this, the Mitochondria in the cell have nothing to burn."
+            },
+            respiratory: {
+                title: "Unit 4: Respiratory System (Videos 15-16)",
+                desc: "Gas exchange. Brings Oxygen in for energy, throws CO2 waste out.",
+                parts: [
+                    { id: "lungs", label: "Lungs", info: "The Air Bags. Fill with air to expose blood to oxygen." },
+                    { id: "alveoli", label: "Alveoli", info: "The Exchange Site. Tiny sacs where O2 jumps into blood and CO2 jumps out." },
+                    { id: "diaphragm", label: "Diaphragm", info: "The Muscle. Moves down to pull air in, moves up to push air out." }
+                ],
+                connection: "This system provides the SPARK (Oxygen). Oxygen is needed to 'burn' the fuel (Glucose) inside the cell."
+            }
+        };
+
+        // --- 3D ENGINE ---
+        let scene, camera, renderer, controls;
+        let currentSystem = 'cell';
+        let groupContainer = new THREE.Group();
+        let animationId;
+
+        // Assets
+        const objects = {};
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x0f172a, 0.02);
+
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 0, 15);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 1.0;
+
+            // Lighting
+            const ambient = new THREE.HemisphereLight(0xffffff, 0x000000, 1);
+            scene.add(ambient);
+            const light = new THREE.DirectionalLight(0xffffff, 2);
+            light.position.set(5, 5, 5);
+            scene.add(light);
+            const rim = new THREE.SpotLight(0x3b82f6, 5);
+            rim.position.set(-5, 5, -5);
+            scene.add(rim);
+
+            scene.add(groupContainer);
+
+            // Generate all systems
+            generateSystems();
+
+            // Start
+            switchSystem('cell');
+            
+            // Hide loading
+            setTimeout(() => {
+                document.getElementById('loading-overlay').style.display = 'none';
+                document.getElementById('ui-panel').classList.remove('hidden');
+            }, 1000);
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            animate();
+        }
+
+        // --- GENERATORS ---
+        function generateSystems() {
+            // 1. CELL MODEL
+            const cellGroup = new THREE.Group();
+            const memGeo = new THREE.IcosahedronGeometry(4, 2);
+            const memMat = new THREE.MeshPhongMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.3, shininess: 100 });
+            cellGroup.add(new THREE.Mesh(memGeo, memMat)); // Membrane
+            
+            const nucMesh = new THREE.Mesh(new THREE.SphereGeometry(1.2, 32, 32), new THREE.MeshPhongMaterial({ color: 0xa855f7 }));
+            cellGroup.add(nucMesh); // Nucleus
+
+            const mitoGroup = new THREE.Group();
+            for(let i=0; i<4; i++) {
+                const m = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 0.8, 4, 8), new THREE.MeshPhongMaterial({ color: 0xf97316 }));
+                m.position.set((Math.random()-0.5)*4, (Math.random()-0.5)*4, (Math.random()-0.5)*4);
+                mitoGroup.add(m);
+            }
+            cellGroup.add(mitoGroup); // Mitochondria
+            objects.cell = cellGroup;
+
+            // 2. BLOOD/HEART MODEL
+            const bloodGroup = new THREE.Group();
+            // Abstract Heart
+            const heartShape = new THREE.Mesh(new THREE.SphereGeometry(2.5, 32, 32), new THREE.MeshPhongMaterial({ color: 0xe11d48, emissive: 0x881337, emissiveIntensity: 0.4 }));
+            heartShape.scale.set(1, 1.2, 0.8);
+            
+            // Pulse Animation Helper
+            heartShape.userData = { pulse: true };
+            bloodGroup.add(heartShape);
+
+            // RBCs flowing around
+            const rbcGeo = new THREE.TorusGeometry(0.3, 0.1, 8, 16);
+            const rbcMat = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+            for(let i=0; i<30; i++) {
+                const rbc = new THREE.Mesh(rbcGeo, rbcMat);
+                const theta = Math.random() * Math.PI * 2;
+                const r = 4 + Math.random();
+                rbc.position.set(r * Math.cos(theta), (Math.random()-0.5)*4, r * Math.sin(theta));
+                rbc.rotation.x = Math.PI/2;
+                bloodGroup.add(rbc);
+            }
+            objects.blood = bloodGroup;
+
+            // 3. DIGESTIVE MODEL
+            const digestGroup = new THREE.Group();
+            // Stomach (Abstract Bag)
+            const stomachGeo = new THREE.SphereGeometry(2, 32, 32);
+            stomachGeo.scale(1.5, 1, 0.8);
+            // Deform slightly
+            const stomach = new THREE.Mesh(stomachGeo, new THREE.MeshPhongMaterial({ color: 0xfca5a5 }));
+            stomach.position.y = 1;
+            digestGroup.add(stomach);
+
+            // Intestine (Coil)
+            const tubePath = new THREE.CurvePath();
+            // Simple visual coil
+            const torusKnot = new THREE.Mesh(new THREE.TorusKnotGeometry(1.5, 0.4, 64, 8), new THREE.MeshPhongMaterial({ color: 0xfcd34d }));
+            torusKnot.position.y = -2;
+            digestGroup.add(torusKnot);
+            objects.digestive = digestGroup;
+
+            // 4. RESPIRATORY MODEL
+            const respGroup = new THREE.Group();
+            // Lungs (Two Lobes)
+            const lobeGeo = new THREE.SphereGeometry(2, 32, 32);
+            lobeGeo.scale(0.8, 1.5, 0.8);
+            
+            const leftLobe = new THREE.Mesh(lobeGeo, new THREE.MeshPhongMaterial({ color: 0xfecaca, transparent: true, opacity: 0.8 }));
+            leftLobe.position.x = -1.2;
+            
+            const rightLobe = new THREE.Mesh(lobeGeo, new THREE.MeshPhongMaterial({ color: 0xfecaca, transparent: true, opacity: 0.8 }));
+            rightLobe.position.x = 1.2;
+
+            // Alveoli dots inside
+            const alvGeo = new THREE.SphereGeometry(0.1, 8, 8);
+            const alvMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            for(let i=0; i<50; i++) {
+                const alv = new THREE.Mesh(alvGeo, alvMat);
+                alv.position.set((Math.random()-0.5)*3, (Math.random()-0.5)*3, (Math.random()-0.5)*1);
+                respGroup.add(alv);
+            }
+
+            respGroup.add(leftLobe, rightLobe);
+            objects.respiratory = respGroup;
+        }
+
+        // --- INTERACTION ---
+        function switchSystem(sysId) {
+            currentSystem = sysId;
+            
+            // Clear current models
+            groupContainer.clear();
+            if(objects[sysId]) groupContainer.add(objects[sysId]);
+
+            // Update UI
+            document.querySelectorAll('.btn-tab').forEach(b => b.classList.remove('active'));
+            document.getElementById(`tab-${sysId}`).classList.add('active');
+
+            const data = systems[sysId];
+            document.getElementById('system-title').innerText = data.title;
+            document.getElementById('system-desc').innerText = data.desc;
+            document.getElementById('ai-response-box').classList.add('hidden');
+
+            const list = document.getElementById('controls-area');
+            list.innerHTML = '';
+            data.parts.forEach(part => {
+                const btn = document.createElement('div');
+                btn.className = 'btn-part';
+                btn.innerHTML = `<strong class="text-xs text-blue-200 block">${part.label}</strong><span class="text-[10px] text-slate-400">${part.info}</span>`;
+                list.appendChild(btn);
+            });
+        }
+
+        function explainConnection() {
+            const box = document.getElementById('ai-response-box');
+            const txt = document.getElementById('ai-text');
+            box.classList.remove('hidden');
+            txt.innerText = systems[currentSystem].connection;
+        }
+
+        // --- ANIMATION LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            // Pulse Heart
+            if(currentSystem === 'blood' && objects.blood) {
+                const heart = objects.blood.children[0];
+                const scale = 1 + Math.sin(Date.now() * 0.005) * 0.05;
+                heart.scale.set(scale, scale * 1.2, scale * 0.8);
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Polyfill for CapsuleGeometry if missing in older ThreeJS versions
+        if (!THREE.CapsuleGeometry) {
+            THREE.CapsuleGeometry = class extends THREE.CylinderGeometry {
+                constructor(radius, length, capSegments, radialSegments) {
+                    super(radius, radius, length, radialSegments, 1);
+                }
+            };
+        }
+
+        init();
+    </script>
+</body>
+</html>
